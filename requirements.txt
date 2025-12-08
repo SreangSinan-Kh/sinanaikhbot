@@ -1,5 +1,5 @@
 python-telegram-bot
-google-generativeai>=0.4.0
-Pillow
+google-generative-ai
 flask
 python-dotenv
+pillow
