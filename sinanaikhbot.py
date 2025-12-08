@@ -30,7 +30,7 @@ def keep_alive():
 
 # --- END OF FLASK SERVER ---
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyCtNQfa1n2_JPFBtwlwNrNvUVIlpNmjA0o") 
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyB5a3I0OrlnlAOo19iap66vB_vbmF0ptKE") 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8536901055:AAGur-CXAyDNXz2EfG-SgQpTV-UedZHkjxs")
 
 MODEL_NAME = 'gemini-2.0-flash' 
