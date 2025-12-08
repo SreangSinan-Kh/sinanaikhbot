@@ -1,275 +1,217 @@
 import os
-import io
 import time
-import asyncio  # ចាំបាច់សម្រាប់ធ្វើ Animation
+import asyncio
 import threading
-import tempfile
+import datetime
 import google.generativeai as genai
-from flask import Flask
-from dotenv import load_dotenv
+from flask import Flask, render_template_string
 from telegram import Update, constants, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------
-# ១. CONFIGURATION & SERVER KEEP-ALIVE (សម្រាប់ Run លើ Server)
+# ១. CONFIGURATION (ការកំណត់សុវត្ថិភាព)
 # ---------------------------------------------------------
+# Load .env សម្រាប់ពេលបង Run នៅក្នុងកុំព្យូទ័រ (Local)
+# ប៉ុន្តែពេលនៅលើ Render វានឹងចាប់យកពី Environment Variables ដោយខ្លួនឯង
 load_dotenv()
 
-# Web Server ដើម្បីបន្លំ Render/Replit កុំឱ្យដេក
-app = Flask('')
+# ចាប់យក Key ពី Render Environment
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# ពិនិត្យមើលថាតើមាន Key ឬអត់ (ការពារកុំឱ្យ Run ទៅ Error)
+if not GOOGLE_API_KEY or not TELEGRAM_BOT_TOKEN:
+    raise ValueError("❌ រកមិនឃើញ API Key ទេ! សូមពិនិត្យមើល Environment Variables ក្នុង Render របស់អ្នក។")
+
+# កំណត់ពេលចាប់ផ្តើម (ដើម្បីគណនា Uptime)
+START_TIME = datetime.datetime.now()
+
+# Setup AI
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# ---------------------------------------------------------
+# ២. STUNNING WEB DASHBOARD (HTML កប់ក្នុង Python)
+# ---------------------------------------------------------
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sinan AI | Status</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&family=Orbitron:wght@500;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Battambang', sans-serif; background-color: #000; color: white; overflow: hidden; }
+        .neon-text { text-shadow: 0 0 15px rgba(6, 182, 212, 0.7); font-family: 'Orbitron', sans-serif; }
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .status-dot {
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
+    <div class="glass-panel w-full max-w-3xl rounded-2xl p-10 m-4 relative overflow-hidden">
+        
+        <div class="flex justify-between items-end mb-10 border-b border-gray-800 pb-6">
+            <div>
+                <h1 class="text-4xl font-bold text-white neon-text mb-2">SINAN AI</h1>
+                <p class="text-gray-400 text-sm tracking-widest">SECURE SYSTEM v2.0</p>
+            </div>
+            <div class="flex items-center gap-2 bg-green-500/10 px-4 py-1 rounded border border-green-500/20">
+                <div class="w-2 h-2 bg-green-500 rounded-full status-dot"></div>
+                <span class="text-green-500 font-mono text-xs font-bold">OPERATIONAL</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="p-6 rounded-xl bg-white/5 border border-white/5 hover:border-cyan-500/30 transition-all">
+                <i class="fa-solid fa-server text-cyan-400 text-2xl mb-4"></i>
+                <div class="text-gray-500 text-xs font-mono mb-1">UPTIME</div>
+                <div class="text-2xl font-bold tracking-tight">{{ uptime }}</div>
+            </div>
+            <div class="p-6 rounded-xl bg-white/5 border border-white/5 hover:border-purple-500/30 transition-all">
+                <i class="fa-solid fa-brain text-purple-400 text-2xl mb-4"></i>
+                <div class="text-gray-500 text-xs font-mono mb-1">ENGINE</div>
+                <div class="text-xl font-bold">Gemini 1.5</div>
+            </div>
+            <div class="p-6 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/30 transition-all">
+                <i class="fa-solid fa-shield-halved text-blue-400 text-2xl mb-4"></i>
+                <div class="text-gray-500 text-xs font-mono mb-1">ENV SECURITY</div>
+                <div class="text-xl font-bold text-blue-400">Protected</div>
+            </div>
+        </div>
+
+        <div class="mt-10 text-center">
+            <p class="text-gray-600 text-[10px] font-mono">DEPLOYED ON RENDER | DEVELOPED BY SINAN</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+# ---------------------------------------------------------
+# ៣. FLASK SERVER (Keep Alive & Dashboard)
+# ---------------------------------------------------------
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Sinan AI Bot Pro is Online!"
+    delta = datetime.datetime.now() - START_TIME
+    uptime_str = str(delta).split('.')[0]
+    return render_template_string(DASHBOARD_HTML, uptime=uptime_str)
 
-def run():
+def run_server():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = threading.Thread(target=run)
+    t = threading.Thread(target=run_server)
+    t.daemon = True
     t.start()
 
-# API Credentials
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-
-if not GOOGLE_API_KEY or not TELEGRAM_BOT_TOKEN:
-    print("❌ សូមបញ្ចូល API Key ក្នុង .env file ជាមុនសិន!")
-
-# Setup Gemini
-genai.configure(api_key=GOOGLE_API_KEY)
-MODEL_NAME = 'gemini-1.5-flash'  # ប្រើ Flash ដើម្បីល្បឿនលឿន និងសន្សំសំចៃ
-
-# System Prompt
-SYSTEM_INSTRUCTION = """
-អ្នកគឺជា "Sinan AI Assistant" (ជំនួយការរបស់បង ស៊ីណាន)។
-1. ភាសា៖ ប្រើភាសាខ្មែរជាគោល មានសុជីវធម៌ និងច្បាស់លាស់។
-2. សមត្ថភាព៖ អាចវិភាគរូបភាព កូដ ឯកសារ និងឆ្លើយតបដូច ChatGPT/Gemini Pro។
-3. ការបង្ហាញ៖ ប្រើ Emoji ឱ្យបានសមរម្យ។ ប្រើ Bold សម្រាប់ចំណុចសំខាន់។
-4. បើគេសួររឿងកូដ៖ សរសេរកូដក្នុង ```programming_language ... ``` ជានិច្ច។
-"""
-
-# ផ្ទុកប្រវត្តិ Chat (In-Memory)
-user_chats = {}
-
 # ---------------------------------------------------------
-# ២. SMART MENU & UI
+# ៤. TELEGRAM BOT HANDLERS
 # ---------------------------------------------------------
 
+# Menu ក្នុង Telegram
 def get_main_menu():
     keyboard = [
         [
-            InlineKeyboardButton("✨ សន្ទនាថ្មី (New Chat)", callback_data='cmd_new'),
-            InlineKeyboardButton("🗑️ លុបប្រវត្តិ (Clear)", callback_data='cmd_clear')
+            InlineKeyboardButton("💬 សន្ទនាថ្មី", callback_data='new'),
+            InlineKeyboardButton("🧹 លុបប្រវត្តិ", callback_data='clear')
         ],
         [
-            InlineKeyboardButton("❓ របៀបប្រើ", callback_data='cmd_help'),
-            InlineKeyboardButton("👨‍💻 អំពីខ្ញុំ", callback_data='cmd_about')
+            InlineKeyboardButton("📊 មើល Status", callback_data='status'),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
-
-def get_response_menu():
-    keyboard = [
-        [
-            InlineKeyboardButton("📝 សង្ខេប", callback_data='act_summarize'),
-            InlineKeyboardButton("🇬🇧 ទៅជា English", callback_data='act_translate'),
-        ],
-        [
-             InlineKeyboardButton("🔍 ពន្យល់បន្ថែម", callback_data='act_explain'),
-             InlineKeyboardButton("💻 កែកូដ", callback_data='act_fix_code')
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# ---------------------------------------------------------
-# ៣. AI LOGIC & ANIMATION HANDLER (កន្លែងសំខាន់)
-# ---------------------------------------------------------
-
-def get_chat_session(chat_id):
-    if chat_id not in user_chats:
-        model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
-        user_chats[chat_id] = model.start_chat(history=[])
-    return user_chats[chat_id]
-
-async def process_ai_request(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, chat_id: int):
-    # ១. ផ្ញើសារ "Loading" ជាមុនសិន
-    status_msg = await context.bot.send_message(chat_id, "AI កំពុងគិត... 🔄", parse_mode='Markdown')
-
-    # ២. បង្កើតមុខងារ Animation (ដំណើរការនៅ Background)
-    async def keep_animating():
-        emojis = ["🔄", "⏳", "🧐", "🧠", "💡", "⚡", "✍️"]
-        idx = 0
-        while True:
-            await asyncio.sleep(2.0) # រង់ចាំ 2 វិនាទី
-            try:
-                idx = (idx + 1) % len(emojis)
-                # Edit សារដើម្បីប្តូរ Emoji
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=status_msg.message_id,
-                    text=f"AI កំពុងគិត... {emojis[idx]}"
-                )
-            except Exception:
-                # ឈប់បើមានបញ្ហា (ឧ. សារត្រូវបានលុប ឬ Edit មិនបាន)
-                break 
-
-    # ៣. ចាប់ផ្តើម Animation Task
-    animation_task = asyncio.create_task(keep_animating())
-
-    try:
-        # ៤. ហៅទៅ AI (ប្រើ asyncio.to_thread ដើម្បីកុំឱ្យគាំង Animation)
-        # ព្រោះ function របស់ google genai មិនមែនជា async ពីកំណើត
-        chat = get_chat_session(chat_id)
-        response = await asyncio.to_thread(chat.send_message, text)
-
-        # ៥. ពេលបានចម្លើយ -> ឈប់ Animation -> លុបសារ Loading
-        animation_task.cancel()
-        try:
-            await context.bot.delete_message(chat_id, status_msg.message_id)
-        except:
-            pass 
-
-        # ៦. ផ្ញើចម្លើយពិតប្រាកដ
-        await send_smart_response(context, chat_id, response.text)
-
-    except Exception as e:
-        animation_task.cancel()
-        await context.bot.edit_message_text(
-            chat_id=chat_id, 
-            message_id=status_msg.message_id, 
-            text=f"⚠️ **មានបញ្ហា៖** \n{str(e)}", 
-            parse_mode='Markdown'
-        )
-
-async def send_smart_response(context, chat_id, text):
-    # បើវែងពេក (>4096 តួ) កាត់ដាក់ក្នុងឯកសារ
-    if len(text) > 4000:
-        file_stream = io.BytesIO(text.encode('utf-8'))
-        file_stream.name = "ai_response.md"
-        await context.bot.send_document(chat_id=chat_id, document=file_stream, caption="✅ ចម្លើយវែងពេក ខ្ញុំដាក់ក្នុងឯកសារជូនណា៎!")
-    else:
-        # ផ្ញើចម្លើយធម្មតា ជាមួយប៊ូតុង Menu
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=text, 
-            parse_mode=constants.ParseMode.MARKDOWN, 
-            reply_markup=get_response_menu()
-        )
-
-# ---------------------------------------------------------
-# ៤. HANDLERS (អ្នកទទួលសារ)
-# ---------------------------------------------------------
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    welcome_msg = (
-        f"👋 **សួស្តី បង {user.last_name}!**\n"
-        f"ស្វាគមន៍មកកាន់ **Sinan AI Assistant Pro** 🚀\n\n"
-        f"ខ្ញុំត្រៀមខ្លួនរួចរាល់សម្រាប់ជួយបង៖\n"
-        f"🔹 សរសេរកូដ & ដោះស្រាយបញ្ហា\n"
-        f"🔹 វិភាគឯកសារ & រូបភាព\n"
-        f"👇 **សូមសាកល្បងសួរខ្ញុំឥឡូវនេះ!**"
+    user = update.effective_user.last_name
+    welcome_text = (
+        f"👋 **សួស្តី បង {user}!**\n"
+        f"ប្រព័ន្ធ AI ដំណើរការដោយសុវត្ថិភាព (Environment Protected) 🔐\n"
+        f"តើបងចង់ឱ្យខ្ញុំជួយអ្វីថ្ងៃនេះ?"
     )
-    await update.message.reply_text(welcome_msg, parse_mode='Markdown', reply_markup=get_main_menu())
+    await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=get_main_menu())
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data
+    await query.answer()
+    
+    if query.data == 'status':
+        delta = datetime.datetime.now() - START_TIME
+        uptime = str(delta).split('.')[0]
+        await query.edit_message_text(f"📊 **System Status:**\n✅ Online\n⏱️ Uptime: `{uptime}`\n🔐 API Security: `Encrypted`", parse_mode='Markdown', reply_markup=get_main_menu())
+    
+    elif query.data == 'new' or query.data == 'clear':
+        await query.edit_message_text("✨ បានចាប់ផ្តើមថ្មី!", reply_markup=get_main_menu())
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await query.answer() # បំបាត់ Loading នៅលើប៊ូតុង
-
-    # បញ្ជាទូទៅ
-    if data == 'cmd_new' or data == 'cmd_clear':
-        if chat_id in user_chats: del user_chats[chat_id]
-        await query.edit_message_text("🧹 **បានលុបប្រវត្តិរួចរាល់!**\nតោះចាប់ផ្តើមសួរខ្ញុំសាថ្មី...", parse_mode='Markdown', reply_markup=get_main_menu())
+    user_text = update.message.text
     
-    elif data == 'cmd_help':
-        await query.edit_message_text("💡 គ្រាន់តែផ្ញើសារ រូបភាព ឬឯកសារ ខ្ញុំនឹងឆ្លើយតបភ្លាមៗ!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់", callback_data='cmd_start')]]))
-
-    elif data == 'cmd_start':
-        await start_command(update, context)
-
-    # Smart Actions (សង្ខេប, បកប្រែ...)
-    elif data.startswith('act_'):
-        prompt = ""
-        if data == 'act_summarize': prompt = "សូមសង្ខេបខ្លឹមសារខាងលើឱ្យខ្លី។"
-        elif data == 'act_translate': prompt = "Translate the above response to English."
-        elif data == 'act_explain': prompt = "ពន្យល់បន្ថែមឱ្យលម្អិត។"
-        elif data == 'act_fix_code': prompt = "ជួយពិនិត្យកូដ និងកែសម្រួលឱ្យល្អ។"
-        
-        # ហៅទៅ Process ដូចការសួរធម្មតា
-        await process_ai_request(update, context, prompt, chat_id)
-
-# ទទួលរូបភាព/ឯកសារ/សំឡេង
-async def handle_universal_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    message = update.message
+    # 1. Animation (Loading)
+    loading_msg = await context.bot.send_message(chat_id, "AI កំពុងគិត... 🔄")
     
-    # កំណត់ប្រភេទឯកសារ
-    file_obj = None
-    mime_type = ""
-    caption = message.caption or "វិភាគឯកសារនេះ"
-
-    if message.photo:
-        file_obj = await message.photo[-1].get_file()
-        mime_type = "image/jpeg"
-    elif message.voice:
-        file_obj = await message.voice.get_file()
-        mime_type = "audio/ogg"
-        caption = "ឆ្លើយតបនឹងសំឡេងនេះ"
-    elif message.document:
-        file_obj = await message.document.get_file()
-        mime_type = message.document.mime_type
-    
-    if not file_obj: return
-
-    # បង្ហាញ Loading
-    status_msg = await context.bot.send_message(chat_id, "📂 កំពុងដំណើរការឯកសារ... ⏳")
+    async def animate():
+        emojis = ["🔄", "⏳", "🧐", "🧠", "💡"]
+        i = 0
+        while True:
+            await asyncio.sleep(2)
+            try:
+                i = (i + 1) % len(emojis)
+                await context.bot.edit_message_text(
+                    chat_id=chat_id, 
+                    message_id=loading_msg.message_id, 
+                    text=f"AI កំពុងគិត... {emojis[i]}"
+                )
+            except: break
+            
+    task = asyncio.create_task(animate())
 
     try:
-        # Download ដាក់ Temp
-        with tempfile.NamedTemporaryFile(delete=False) as temp:
-            await file_obj.download_to_drive(custom_path=temp.name)
-            temp_path = temp.name
-
-        # Upload ទៅ Gemini
-        uploaded_file = await asyncio.to_thread(genai.upload_file, temp_path, mime_type=mime_type)
+        # 2. Call Gemini AI
+        response = await asyncio.to_thread(model.generate_content, user_text)
         
-        # Generate ចម្លើយ
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = await asyncio.to_thread(model.generate_content, [caption, uploaded_file])
+        # 3. Stop Animation
+        task.cancel()
+        try: await context.bot.delete_message(chat_id, loading_msg.message_id)
+        except: pass
 
-        # Cleanup
-        os.remove(temp_path)
-        await context.bot.delete_message(chat_id, status_msg.message_id)
-        
-        await send_smart_response(context, chat_id, response.text)
+        # 4. Send Response
+        await context.bot.send_message(chat_id, response.text, parse_mode='Markdown')
 
     except Exception as e:
-        await context.bot.edit_message_text(f"❌ Error: {str(e)}", chat_id=chat_id, message_id=status_msg.message_id)
-
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await process_ai_request(update, context, update.message.text, update.effective_chat.id)
+        task.cancel()
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=loading_msg.message_id, text=f"⚠️ Error: {e}")
 
 # ---------------------------------------------------------
-# ៥. SYSTEM START
+# ៥. MAIN EXECUTION
 # ---------------------------------------------------------
 if __name__ == '__main__':
-    keep_alive() # បើក Web Server
-    print("🚀 Sinan AI Assistant (Full Version) is Starting...")
+    print("🚀 SINAN AI: Secure Boot...")
+    keep_alive() # Start Web Server
     
     app_bot = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Commands & Callbacks
-    app_bot.add_handler(CommandHandler("start", start_command))
-    app_bot.add_handler(CallbackQueryHandler(handle_callback))
-
-    # Media Handlers
-    app_bot.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.Document.ALL, handle_universal_media))
     
-    # Text Handler (ដាក់ចុងក្រោយ)
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-
+    app_bot.add_handler(CommandHandler("start", start_command))
+    app_bot.add_handler(CallbackQueryHandler(callback_handler))
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
     app_bot.run_polling()
