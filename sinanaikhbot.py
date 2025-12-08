@@ -4,23 +4,28 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 import PIL.Image
 import io
 import os
-import tempfile 
+import tempfile
 import asyncio
 from flask import Flask
 from threading import Thread
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------
-# ១. ការកំណត់ (CONFIGURATION)
+# ១. ការកំណត់សុវត្ថិភាព & SERVER (SECURITY CONFIG)
 # ---------------------------------------------------------
-# បន្លំ Render ដោយបង្កើត Web Server មួយ
+
+# 1. Load Environment Variables (សម្រាប់ Local)
+load_dotenv()
+
+# 2. បន្លំ Render ដោយបង្កើត Web Server
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "✅ Bot is running securely!"
 
 def run():
-    # Render នឹងផ្តល់ PORT មកអោយតាមរយៈ Environment Variable
+    # Render នឹងផ្តល់ PORT មកអោយយើង
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -28,29 +33,32 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- END OF FLASK SERVER ---
+# 3. ទាញយក API Keys ពីប្រព័ន្ធ (Render Environment)
+# ហាមដាក់លេខកូដសម្ងាត់នៅទីនេះដាច់ខាត!
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyB5a3I0OrlnlAOo19iap66vB_vbmF0ptKE") 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8536901055:AAGur-CXAyDNXz2EfG-SgQpTV-UedZHkjxs")
+# 4. ពិនិត្យមើលថាតើមាន Key ឬអត់?
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ Error: រកមិនឃើញ 'GOOGLE_API_KEY' ទេ! សូមទៅដាក់ក្នុង Environment Variables នៅលើ Render។")
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("❌ Error: រកមិនឃើញ 'TELEGRAM_BOT_TOKEN' ទេ!")
 
+# Configure Gemini
+genai.configure(api_key=GOOGLE_API_KEY)
 MODEL_NAME = 'gemini-2.0-flash' 
 
 # ទុកស្ថិតិ
-user_data = {
-    "usage_count": 0
-}
+user_data = {"usage_count": 0}
 
 # Prompt ឆ្លាតវៃ
 SUPER_SYSTEM_PROMPT = """
-អ្នកគឺជា AI Assistant ផ្ទាល់ខ្លួនដ៏ឆ្លាតវៃបំផុត។
-តួនាទី៖
-1. ឆ្លើយតបច្បាស់ៗ និងរហ័ស។
-2. អាចអានឯកសារ (PDF, Excel, Code) និងវិភាគរូបភាព/សំឡេង។
-3. បើគេអោយសរសេរកូដ ត្រូវសរសេរ Clean Code។
-ភាសា៖ ប្រើភាសាខ្មែរជាគោល។
+អ្នកគឺជា "Sinan AI Assistant"។
+តួនាទី៖ ឆ្លើយតបសំណួរ, សរសេរកូដ, និងដោះស្រាយបញ្ហាទូទៅ។
+សមត្ថភាព៖ អាចអានឯកសារ PDF, Excel, Code, រូបភាព និងស្តាប់សំឡេងបាន។
+ភាសា៖ ប្រើភាសាខ្មែរជាគោល (វៀរលែងតែកូដ ឬពាក្យបច្ចេកទេស)។
 """
 
-genai.configure(api_key=GOOGLE_API_KEY)
 user_chats = {} 
 
 # ---------------------------------------------------------
@@ -91,7 +99,7 @@ async def show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE, is_
     count = user_data['usage_count']
     
     dashboard_text = (
-        f"👋 **សួស្តី, បង {user.last_name}!**\n\n"
+        f"👋 **សួស្តី, បង {user.first_name}!**\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"💎 **SINAN AI PREMIUM**\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -235,7 +243,7 @@ async def send_smart_response(context, chat_id, text):
 # ៦. SYSTEM START
 # ---------------------------------------------------------
 if __name__ == '__main__':
-    # ចាប់ផ្តើម Web Server ដើម្បីបន្លំ Render
+    # ចាប់ផ្តើម Web Server ដើម្បីបន្លំ Render (កុំអោយគេបិទ)
     keep_alive()
     
     print("🚀 Sinan AI Bot is starting...")
