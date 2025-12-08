@@ -46,7 +46,7 @@ if not TELEGRAM_BOT_TOKEN:
 
 # Configure Gemini
 genai.configure(api_key=GOOGLE_API_KEY)
-MODEL_NAME = 'gemini-1.5-flash' 
+MODEL_NAME = 'gemini-2.0-flash' 
 
 # ទុកស្ថិតិ
 user_data = {"usage_count": 0}
@@ -258,3 +258,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     app.run_polling()
+
